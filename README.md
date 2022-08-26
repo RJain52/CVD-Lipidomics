@@ -2,7 +2,7 @@
 
 This repository contains the analysis used in our preprint:
 
-##Identification of novel plasma lipid markers of cardiovascular disease risk in White and Black women
+## Identification of novel plasma lipid markers of cardiovascular disease risk in White and Black women
 
 Raghav Jain, Jessica Davidson, Paula Gonzalez, Christopher L Coe, Camille King, Carol Ryff, Andrew J Bersch, Sheher Mohsin, Gayle D Love, Francesca Nimityongskul, Kristen Malecki,  View ORCID ProfileJudith Simcox
 
