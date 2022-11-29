@@ -10,5 +10,5 @@ Raghav Jain, Jessica Davidson, Paula Gonzalez, Christopher L Coe, Camille King, 
 
 Repository Under Construction
 
-All lipidomics data from the MIDUS study must be requested by contacting the study administrators at midus.wisc.edu .
+All lipidomics data from the MIDUS study must be requested by contacting the <a href="midus.wisc.edu">MIDUS</a> study administrators.
 Any data presented here was randomly generated - it is NOT the data used in our analyses. 
