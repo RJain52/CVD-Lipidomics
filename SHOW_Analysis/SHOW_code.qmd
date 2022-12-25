@@ -11,7 +11,7 @@ output:
 
 We retrieved anthropometric data from the Survey of the Survey of the Health of Wisconsin (SHOW) study on 119 Black and White females. We performed in-house cytokine and lipidomics measurements to determine signatures of high blood pressure (HBP; systolic BP\>120 or diastolic BP\>80). Lipidomics data is in units of nM.
 
-Release of de-identified data pertaining to this analysis and available on Github was approved by the SHOW study in accordance with their IRB. For more information on methods and the target populations, please refer to our manuscript (updated link on Github page at Rjain52/CVD-Lipidomics). \*\*\* \# 2. Load packages and data Please see 'Session info' for system requirements. For Mac, XQuartz is required to output pdf documents using 'Cairo' package. Note that all sections of the script are reliant on this section.
+Release of de-identified data pertaining to this analysis and available on Github was approved by the SHOW study in accordance with their IRB. For more information on methods and the target populations, please refer to our manuscript (updated link on Github page at RJain52/CVD-Lipidomics). \*\*\* \# 2. Load packages and data Please see 'Session info' for system requirements. For Mac, XQuartz is required to output pdf documents using 'Cairo' package. Note that all sections of the script are reliant on this section.
 
 ```{r}
 # Run the packages twice to ensure installation and loading of packages
