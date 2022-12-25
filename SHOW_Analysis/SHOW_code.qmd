@@ -1,0 +1,857 @@
+---
+title: "SHOW data analysis"
+author: "Raghav Jain"
+date: "12/24/2022"
+output:
+  html_document:
+    df_print: paged
+---
+
+# 1. Summary
+
+We retrieved anthropometric data from the Survey of the Survey of the Health of Wisconsin (SHOW) study on 119 Black and White females. We performed in-house cytokine and lipidomics measurements to determine signatures of high blood pressure (HBP; systolic BP\>120 or diastolic BP\>80). Lipidomics data is in units of nM.
+
+Release of de-identified data pertaining to this analysis and available on Github was approved by the SHOW study in accordance with their IRB. For more information on methods and the target populations, please refer to our manuscript (updated link on Github page at Rjain52/CVD-Lipidomics). \*\*\* \# 2. Load packages and data Please see 'Session info' for system requirements. For Mac, XQuartz is required to output pdf documents using 'Cairo' package. Note that all sections of the script are reliant on this section.
+
+```{r}
+# Run the packages twice to ensure installation and loading of packages
+# may need to download 'xrun' package separately before loading this
+if(!require(tidyverse)){install.packages("tidyverse")}
+if(!require(ggpubr)){install.packages("ggpubr")}
+if(!require(rstatix)){install.packages("rstatix")}
+if(!require(ggsci)){install.packages("ggsci")}
+if(!require(scales)){install.packages("scales")}
+if(!require(Cairo)){install.packages("Cairo")}
+if(!require(RColorBrewer)){install.packages("RColorBrewer")}
+if(!require(ggrepel)){install.packages("ggrepel")}
+
+# may need to download 'devEMF' and 'rvg' package separately before loading this
+if(!require(webr)){install.packages("webr")}
+
+# Set default theme for plots
+theme_set(theme_bw(base_size = 16, base_family = "Arial"))
+
+# Set default color schemes
+mypal <- pal_nejm(palette = c("default"))(8)
+show_col(mypal)
+palette(mypal)
+show_pal <- c("#20854EFF", "#E18727FF")
+mypal2 <- pal_jama(palette = c("default"))(7)
+palette_sc <- c("#1B1919FF", "#AD002AFF")
+
+# Load data
+my_data <- read_csv("data/SHOW_data.csv")
+
+# Create variable to code High BP
+Diag_HBP <- ifelse(my_data$`Systolic BP` > 120 | my_data$`Diastolic BP` > 80,
+                             "High", "Normal")
+
+# Add new binary BP variable as a factor
+my_data <- my_data |> 
+  add_column(Diag_HBP, .before = 4)
+
+my_data$Diag_HBP <- factor(my_data$Diag_HBP, 
+                           levels = c("Normal", "High"))
+
+# Remove any participant without appropriate BP data
+# This is a sanity check; no observations should be dropped for this analysis
+my_data <- my_data |> drop_na(Diag_HBP) 
+
+my_data$Race <- factor(my_data$Race, 
+                           levels = c("Caucasian", 
+                                      "African-American"))
+
+my_data$Race <- recode(my_data$Race, 
+                              Caucasian="White",
+                             `African-American`="Black")
+
+# Working dataset
+lipid_data <- my_data
+```
+
+------------------------------------------------------------------------
+
+# 3. General plots
+
+Below is an example of code used for each figure.
+## Cholesterol correlation plot
+```{r}
+# Subset Race, cholesterol and systolic BP variables
+Z <- lipid_data |> select(Race, `Systolic BP`, `Total cholesterol`)
+
+p0 <- ggscatter(Z,                        # Make scatterplot with BP on x-axis, cholesterol on y-axis
+                x = "Systolic BP", 
+                y = "Total cholesterol",
+                add = "reg.line", conf.int = FALSE,       # Plot regression line, no confident interval
+                color = "Race", palette = palette_sc,     # Add regression lines
+                shape = "Race") +                         # Change point shape by Race
+  stat_cor(aes(color = Race),                             # Plot Spearman correlation by Race
+           method = "spearman",
+           label.x = min(Z$`Systolic BP`),                # x-coordinate of label
+           p.accuracy = 0.001, r.accuracy = 0.01) +       # rounding for r and p-values
+  xlab("Systolic Blood Pressure (mmHg)") +                # x-axis title 
+  ylab("Total cholesterol (mg/dL)") +                     # y-axis title
+  ggtitle("Systolic BP versus Total Cholesterol - SHOW") +   # Plot title
+  ylim(c(100, 350)) +                                     # y-axis limits
+  theme_minimal() +                                       # change theme
+  theme(legend.position = "right",                        # change legend, font size and font
+        text = element_text(size = 16, 
+                            family = "Arial"),
+        axis.line = element_line(colour = "black")
+        )
+p0
+
+CairoPDF(file = "output/SHOW_cholesterol_correlation.pdf", 
+         height = 8, width = 10)
+  print(p0)
+dev.off()
+```
+
+## Violin Plot
+
+```{r}
+Z = lipid_data
+
+# Below, the hsCRP plot is reproduced
+
+p0 <- Z |>
+  ggplot(aes(x=Race,                    # Race is the x-axis variable
+             y=log10(`hsCRP (ng/mL)`),  # hsCRP is log10 transformed
+             group = Diag_HBP,          # BP groups within race are plotted
+             fill = Diag_HBP)) +
+  geom_violin(aes(group = interaction(Diag_HBP, Race)), # violin plot added
+                      scale = "area") +
+  scale_fill_manual("Blood Pressure",   # Legend title and group colors
+                    values = c("#709AE1FF", "#FED439FF")
+                    ) +
+  geom_boxplot(aes(group = interaction(Diag_HBP, Race)),  # overlay boxplot
+               width = 0.3, alpha = 0.8,                  # size and color shade
+               outlier.shape = NA,                        # not plotting outliers
+               color = "black",                           # boxplot outline
+               fill = "white",                            # boxplot fill
+               position = position_dodge(width = 0.9)     # plot offset by x-axis
+               ) +
+  geom_point(shape = 21,                 # Add individual points
+             size = 2,                
+             alpha = 0.2, 
+             position=position_jitterdodge(dodge.width = 0.9) # Add jitter to points
+             ) + 
+  theme(legend.position = "none",                 # legend plot for points
+        plot.title = element_text(size = 11)
+        ) +
+  xlab("Race") +                                  # x-axis title
+  ylab(bquote('log'[10]*'(hsCRP)')  # y-axis title
+       ) +
+  theme_bw(base_size = 16, base_family = "Arial") +  # simple theme
+  theme(legend.position = 'right') +                 # additional theme position
+  ggtitle("SHOW hsCRP (ng/mL)") +                    # plot title
+  stat_compare_means(label = "p.format",             # non-parametric test
+                     label.x = 1.5,
+                     label.y = 1.05*(log10(max(Z$`hsCRP (ng/mL)`, 
+                                               na.rm = T)
+                                           )
+                                     ), 
+                     method = "wilcox.test")
+# View plot
+p0
+
+# save .pdf of plot in already created folder titled 'output'
+CairoPDF("output/SHOW_violin_CRP.pdf")
+      print(p0)
+dev.off()
+```
+
+## Lipidomics Methods
+
+These are the plots describing our method.
+
+### Scatter plot of identified lipids.
+
+```{r}
+# Read in data on identified lipids in the method
+all_id <- read_csv("data/method_plot.csv")
+p0 <- all_id |> ggplot(aes(x = `RT (avg)`,    # plot RT on x-axis
+                           y = `Mass (avg)`,  # plot Mass on y-axis (m/z since charge always 1 for lipids)
+                           color = `Class`)   # color points by lipid class
+                       ) +
+  geom_point() +                              # plot all lipids as points
+  scale_color_manual(values = mypal2[c(1, 3:6)]) +
+  ylab("mass-to-charge (mz)") +
+  xlab("Retention Time (min)") +
+  ggtitle("LC-MS analysis of SHOW samples", 
+          subtitle = "Lipids identified in plasma."
+          ) +
+  theme_bw(base_size = 16) +
+  theme(text = element_text(face = "bold", 
+                            family = "Arial")
+        )
+p0
+
+CairoPDF(file = "output/SHOW_lipidomics.pdf", 
+         height = 8, width = 14)
+  print(p0)
+dev.off()
+```
+
+### Pie-donut chart of identified lipids.
+
+```{r}
+# Create dataframe tabulating lipids with respect to lipid class and subclass
+Z <- all_id |> 
+  count(Class, Abbreviation,
+        sort = TRUE)            # sort from highest to lowest by number of lipids of each group
+
+names(Z)[2] <- "Subclass"       # Rename 'Abbreviation' columns
+
+Z |> PieDonut(aes(Class, Subclass, count=n),    # major class inside, subclass outside, size by count
+                  title = "Lipid species distribution",   
+                  ratioByGroup = F, 
+                  explodePie = T,                  # Add white spacing between pie
+                  explodeDonut = T,                # Add white spacing between donut
+                  labelposition = 0)
+
+CairoPDF(file = "output/SHOW_lipidomics_pie.pdf", 
+         height = 12, width = 12)
+  Z |> PieDonut(aes(Class, Subclass, count=n), 
+                 title = "Lipid species distribution",
+                 ratioByGroup = F,
+                 explodePie = T,
+                 explodeDonut = T,
+                 labelposition = 0)
+dev.off()
+```
+
+## Lipid class analyses
+
+Analyze lipidomics by lipid class and acyl chain \### Class Changes in lipids Code is broken up into multiple parts. Total lipid amounts by class.
+
+```{r}
+Z <- lipid_data
+Z[is.na(Z)] <- 0
+
+# Sum total lipids by sub class based on what's in the data
+Z$`Total CE` <- rowSums(Z[,grep('CE ', colnames(Z))])
+Z$`Total Cer` <- rowSums(Z[,grep('Cer', colnames(Z))])
+Z$`Total DG` <- rowSums(Z[,grep('\\bDG\\b', colnames(Z))])
+Z$`Total EtherPC` <- rowSums(Z[,grep('EtherPC', colnames(Z))])
+Z$`Total EtherPE` <- rowSums(Z[,grep('EtherPE', colnames(Z))])
+Z$`Total FA` <- rowSums(Z[,grep('\\bFA\\b', colnames(Z))])
+Z$`Total FFA` <- rowSums(Z[,grep('FA', colnames(Z))])  
+Z$`Total LPC` <- rowSums(Z[,grep('LPC', colnames(Z))])  
+Z$`Total LPE` <- rowSums(Z[,grep('LPE', colnames(Z))])  
+Z$`Total PC` <- rowSums(Z[,grep('\\bPC\\b', colnames(Z))])  
+Z$`Total PE` <- rowSums(Z[,grep('\\bPE\\b', colnames(Z))]) 
+Z$`Total PI` <- rowSums(Z[,grep('\\bPI\\b', colnames(Z))]) 
+Z$`Total SM` <- rowSums(Z[,grep('\\SM\\b', colnames(Z))]) 
+Z$`Total TG` <- rowSums(Z[,grep('TG', colnames(Z))])
+
+# Lipids used to calculate total phospholipids
+my_PPL <- c("BMP", "CL", "EtherPC", "EtherPE", "LPA", "LPC", "LPE", "LPG",
+            "LPI", "LPS", "PA", "PC", "PE", "PG", "PI", "PMeOH", "PS")
+Z$`Total PPL` <- rowSums(Z[,grep(paste(my_PPL, collapse = "|"),
+                                             colnames(Z))])
+
+# Lipids used to calculate total (non-PPL) glycerolipids
+my_GL <- c("DG","TG")
+Z$`Total GL` <- rowSums(Z[,grep(paste(my_GL, collapse = "|"),
+                                             colnames(Z))])
+
+# Lipids used to calculate total sphingolipids
+my_SPL <- c("Cer", "GM3", "SM")
+Z$`Total SPL` <- rowSums(Z[,grep(paste(my_SPL, collapse = "|"),
+                                             colnames(Z))])
+# Total sterol lipids (i.e. total cholesteryl esters)
+Z$`Total ST` <- Z$`Total CE`
+```
+
+```{r}
+Y <- Z |> select(Simcox_ID:`TNF-a (pg/mL)`, 
+                 `Total CE`:`Total ST`)
+
+# log10 transform lipid columns
+Y <- Y |> 
+  mutate(across(`Total CE`:`Total ST`, log10))
+```
+
+```{r}
+# Filter to target data to plot
+mdat1 <- Y |> 
+  filter(Race == "Black") |>                # Choose either Black or White
+  select(Diag_HBP, `Total PPL`:`Total ST`)   # For major class, Total PPL:Total ST  
+                                            # For subclass, Total CE:Total TG
+
+# Make data long-form; retain HBP variable and pivot all lipid variables
+mdat2 <- mdat1 |> pivot_longer(!Diag_HBP, 
+                               names_to = "Lipid",
+                               values_to = "value")
+
+names(mdat2)[1] <- "Condition"             # Rename 'Diag_HBP'
+
+# Make variables factors and change levels to desired order for plotting
+mdat2$Condition <- factor(mdat2$Condition, 
+                          levels = c("Normal", "High"))
+
+mdat2$Lipid <- factor(mdat2$Lipid)
+mdat2 <- na.omit(mdat2)
+
+p0 <- ggbarplot(mdat2, x = "Lipid", y = "value",       # Create barplot
+            add = c("mean_se", "dotplot"),             # elements to add
+            color = "Condition",                       # outline colors; used for dotplot grouping
+            fill = "Condition",                        # fill colors; used for barplot grouping
+            add.params = list(width = 0.35,            # parameters for dot formatting
+                              binwidth = 0.005*max(mdat2$value,     # binwidth refers to size of dots
+                                                   na.rm = T)
+                              ),
+            alpha = 0.75,                              # opacity of colors
+            position = position_dodge(0.8),            # spacing of bars w.r.t. each other 
+            size = 0.15                                # width of error lines
+            )                              # note: width can be used to specify individual bar size
+
+p1 <- ggpar(p0,                        # wrapper for ggplot for aesthetics
+            palette = show_pal,        # palette
+            legend = "right",          # legend position 
+            legend.title = "Blood Pressure") +              # legend title
+  scale_y_continuous(limits = c(0.0, 1.25*max(mdat2$value)  # y-axis limits
+                                ),
+                     expand=c(0,0)                          # remove extra spacing on edges of plot
+                     ) +       
+  theme_bw(base_size = 16,                                  # various theme changes
+           base_family = "Arial") +
+  theme(legend.position = "right",
+        text = element_text(face="bold", 
+                            size = 14,
+                            family = "Arial",
+                            colour = "black"),
+        axis.text.x = element_text(angle = 45,              # change x-axis text orientation
+                                   hjust=1)                 # vertical adjustment for text
+        )
+
+# Perform t-test for pairwise comparisons
+stat.test <- mdat2 |>
+  group_by(Lipid) |>                  # grouping variable (x-axis)
+  na.omit() |>
+  t_test(value ~ Condition) |>        # perform t-test comparing lipid values by conditions (BP status)
+  adjust_pvalue(method = "none") |>   # prevent automatic multiple comparison calculation
+  add_significance("p")               # column for final p-value to be plotted
+
+stat.test$p.adj.signif <- stat.test$p.signif    # Additional fail-safe to not use adjusted p-values
+stat.test <- stat.test |>
+  na.omit() |>
+  add_xy_position(fun = "max",        # add coordinates to plot p-values based on highest point
+                  "Lipid",            # x-axis variable
+                  dodge = 0.8)        # spacing of p-values; should match 'position_dodge' above
+  
+p2 <- p1 + stat_pvalue_manual(        # add p-values to plots
+  stat.test,                         
+  label = "p.signif",                 # text to plot (p-value or asterisks)
+  tip.length = 0.02,                  
+  hide.ns = F) +                      # display non-significant (P<0.05) comparisons?
+  ylab(expression(bold("log"["10"]*"(nM lipid)"))) +  # y-axis title
+  xlab(expression(bold("Lipid Class"))) +             # x-axis title
+  ggtitle(expression(bold("Major Class Lipids - Black")))    # plot title
+
+p2
+
+CairoPDF(file = "output/SHOW_Black_class_bars.pdf", 
+           height = 8, width = 10)
+  print(p2)
+dev.off()
+```
+
+### PPL Acyl Chain comparisons
+
+```{r}
+# Filter all lipid species of a given major lipid class
+Z <- lipid_data |> select(Simcox_ID, Race, Diag_HBP,      # subset these columns by name
+                         grep(paste(my_PPL,               # subset all PPL lipids
+                                    collapse = "|"),      # can replace with 'my_SPL' or 'my_GL'
+                                  names(lipid_data)
+                              )
+                          )
+
+Z <- Z |> replace(is.na(Z), 0)  # Replace NA values with 0
+Z <- Z |> rename(HBP = Diag_HBP)
+
+# Make data long-form
+mdat1 <- Z |> pivot_longer(!Simcox_ID:HBP, 
+                           names_to = "Lipids",
+                           values_to = "values")
+
+# Use text editing to tabulate FA intensity across lipid species
+mdat1$Lipids <- gsub(".*\\ ",            # Removes characters from start '.*'
+                     "", mdat1$Lipids)   # until the first space '\\ ' and replaces with nothing ('""')
+
+# Remove the sn-2 position info on lyso-PPL
+mdat1$Lipids <- gsub("/0:0", "", mdat1$Lipids)
+mdat1$Lipids <- gsub("0:0/", "", mdat1$Lipids)
+
+mdat2 <- str_split_fixed(mdat1$Lipids, "_", 2) # separate text at the '_' between FAs (change to 3 if GLs)
+mdat3 <- cbind(mdat1, mdat2)
+
+# Split individual FAs into separate columns for further editing
+# Create a third data frame for GLs
+mdat3_FA1 <- mdat3 |> select(Simcox_ID:values, `1`)    
+mdat3_FA2 <- mdat3 |> select(Simcox_ID:values, `2`) 
+
+names(mdat3_FA1)[6] <- "FA"
+names(mdat3_FA2)[6] <- "FA"
+
+# Replace ether lipid 'e' and duplicate annotation '_2' in FA names
+mdat3_FA1$FA <- gsub("e", "", mdat3_FA1$FA)
+mdat3_FA1$FA <- gsub("_2", "", mdat3_FA1$FA)
+mdat3_FA2$FA <- gsub("_2", "", mdat3_FA2$FA)
+
+# verify no other FA names need to be edited
+table(mdat3_FA1$FA)
+table(mdat3_FA2$FA)    # the '2' FAs refers to sum composition duplicates that can be ignored
+
+# This is the dataset with names cleaned up
+mdat4 <- rbind(mdat3_FA1, mdat3_FA2)
+
+# Sum up acyl chain values
+mdat5 <- mdat4 |> 
+  group_by(Simcox_ID, Race, HBP, FA) |>  # grouping variables to retain
+  summarise(value = sum(values)) |>           # function to apply (summation of value column)
+  ungroup()
+
+# Filter by Race
+mdat6 <- mdat5 |> filter(Race == "Black")
+
+# List acyl chain of interest
+table(mdat6$FA)  # acyl chain options
+Chains <- c("16:0", "16:1", "18:0",
+            "18:1", "18:2", "20:3",
+            "20:4", "22:4", "22:6")
+
+mdat6 <- mdat6 |> filter(FA %in% Chains)  # Retain acyl chains of interest
+mdat6$value <- log10(mdat6$value)         # transform data
+
+# See previous section for details on barplot code
+p0 <- ggbarplot(mdat6, x = "FA" , y = "value", 
+                fill = "HBP", color = "HBP",
+                add = c("mean_se", "dotplot"),  
+                add.params = list(width = 0.35, 
+                              binwidth = 0.005*max(mdat6$value, na.rm = T)),
+                alpha = 0.75, position = position_dodge(0.8), size = 0.5
+                )
+
+p1 <- ggpar(p0, palette = show_pal, legend = "right", 
+            legend.title = "Blood Pressure") +
+  scale_y_continuous(limits = c(0.0, 1.25*max(mdat6$value)),
+                               expand=c(0,0)
+                               ) +
+  theme_bw(base_size = 16, base_family = "Arial") +
+  theme(legend.position = "right",
+        text = element_text(face="bold",
+                            size = 14,
+                            family = "Arial",
+                            colour = "black"),
+        axis.text.x = element_text(angle = 45, hjust=1)
+        )
+
+stat.test <- mdat6 |>
+  na.omit() |>
+  group_by(FA) |>
+  t_test(value ~ HBP) |>
+  adjust_pvalue(method = "none") |>
+  add_significance("p")
+stat.test$p.adj.signif <- stat.test$p.signif 
+stat.test <- stat.test |>
+  add_xy_position(fun = "max", x = "FA", dodge = 0.8) 
+  
+p2 <- p1 + stat_pvalue_manual(
+  stat.test, label = "p",
+  tip.length = 0.02, hide.ns = F
+  ) +
+  ylab(expression(bold("log"["10"]*"(nM lipid)"))) +
+  xlab(expression(bold("Acyl Chain"))) +
+  ggtitle(expression(bold("PPL Acyl Chain Signal - Black")))
+
+p2
+
+CairoPDF(file = paste0("output/SHOW_PPL_Chain_Breakdown_Black.pdf"),
+         height = 8, width = 10)
+  print(p2)
+dev.off()
+```
+
+## Lipidomics volcano plot
+
+```{r}
+# Working dataset with key grouping variables and lipids
+Z <- lipid_data |>
+  select(Simcox_ID, Race, Diag_HBP, 
+         `CE 16:0`:`TG 58:9`)
+# Make sure all 0 values are NA
+Z[Z==0] <- NA
+
+# log2 transform lipid data
+Z <- Z |>
+  mutate(across(c(`CE 16:0`:`TG 58:9`), log2))
+
+# Make data long-form for target population (Black or White)
+Y <- Z |> filter(Race == "White") |>             # Race filter must be applied here or FDR will be affected
+  pivot_longer(cols = -c(Simcox_ID:Diag_HBP), 
+                       names_to = "Lipid", 
+                       values_to = "value")
+
+# Generate data to make volcano plot
+# This code performs the calculations within the group specified
+volcano <- Y |> drop_na() |>
+  group_by(Lipid, Race) |>      # retain Lipid names and Race info
+  summarise(log2_FC = mean(value[Diag_HBP == "High"]) # Calculate fold change between high & normal BP
+            - mean(value[Diag_HBP == "Normal"])) |>
+  ungroup()
+
+# Calculate p-values for high versus normal BP for each lipid, within each group
+stat.test <- Y |>
+  group_by(Lipid, Race) |>          # Grouping variables as above
+  t_test(value ~ Diag_HBP) |>       # signifcance test (can also do wilcox_test)
+  adjust_pvalue(method = "fdr") |>  # multiple comparison adjustment (adjusted values in new column)
+  mutate(log10_p = -log10(p)) |>    # transform p-values for plotting
+  ungroup()
+
+# Add stats info to fold change
+volcano <- left_join(volcano, stat.test, 
+                     by = c("Lipid","Race"))
+
+# Create binary [factor] variable for lipid change based on FDR p-value and direction of change
+volcano$signif <- ifelse(volcano$p.adj < 0.05 & volcano$log2_FC > 0.0, 
+                         "Increased", "q>0.05")
+volcano$signif <- ifelse(volcano$p.adj < 0.05 & volcano$log2_FC < 0.0, 
+                         "Decreased", volcano$signif)
+volcano$signif <- factor(volcano$signif,
+                         levels = c("q>0.05", "Increased", "Decreased"))
+  
+# Create scatterplot with fold change on x-axis, p-value on y-axis, and FDR adjusted direction by color
+# See previous sections for explanation on ggplot options
+p0 <- volcano |> ggplot(aes(x=log2_FC, y=log10_p, col=signif)) +
+  geom_point() + 
+  scale_x_continuous(limits = c(-0.70, max(volcano$log2_FC)*1.1)) +
+  scale_y_continuous(limits = c(0, 7.50), expand = c(0.01,0)) +
+  theme_minimal() +
+  scale_color_manual(values=c("grey70", "#E18727FF", "#20854EFF"), 
+                           name = "Change in Circulation",                   # legend title
+                           breaks = c("q>0.05", "Increased", "Decreased"),   # factor levels in volcano
+                           labels = c("q>0.05", "Increased", "Decreased")) + # desired name in legend
+  geom_hline(yintercept = 1.301,                                             # dashed line for p<0.05
+             linetype = "dashed",
+             linewidth = 0.5) +
+  geom_label(aes(x = 1.5, y = 1.301,           # text label for line signifying p-value
+                 label = "P<0.05",
+                 vjust = -0.5),
+             colour = "black", label.size = NA) +
+  ggtitle("SHOW - White lipid changes") +
+  ylab(expression(bold("-log"["10"]*"(p-value)"))) +
+  xlab(expression(bold("Fold change [log"["2"]*"(HBP) - log"["2"]*"(Normal)]"))) +
+  theme_bw(base_size = 16, base_family = "Arial") + 
+  theme(legend.position = "right",
+        text = element_text(face="bold"),
+        axis.text = element_text(colour = "black"))
+
+p0
+
+CairoPDF(file = "output/SHOW_White_volcano.pdf", 
+         height = 8, width = 10)
+ print(p0)
+dev.off()
+```
+
+# 4. Multiple linear regressions
+
+This section is broken into multiple code chunks for the different aspects of analysis.
+
+Multiple linear regressions were performed to identify lipids significantly associated with systolic blood pressure after correcting for a number of common CVD risk factors.
+
+Several lipid variables were randomly selected. Histograms plotting the values indicated right skewness. After testing log2 and scaling independently, it was found that log2 transformation AND scaling (pareto) gave the most normal distribution. Hence, all dependent, numerical variables were log2 transformed, then pareto scaled for linear regression.
+
+```{r}
+# Subset systolic (dependend variable), common risk factors and all lipid variables
+Z <- lipid_data |>
+  select(`Systolic BP`, Race, Age, `WC (cm)`, HbA1c,
+         HDL, `Total cholesterol`, `hsCRP (ng/mL)`,
+         `CE 16:0`:`TG 58:9`)
+```
+
+Do NOT transform or scale the dependent variable.
+
+```{r}
+# specify y-variable to be predicted
+y_var <- Z$`Systolic BP`
+
+# Race is a dummy variable where 0 = White, 1 = Black
+race_var <- Z$Race
+
+# log2 transform and scale the rest of the covariates
+Age_var <- scale(log2(Z$Age), center = TRUE, scale = TRUE)
+WC_var <- scale(log2(Z$`WC (cm)`), center = TRUE, scale = TRUE)
+CRP_var <- scale(log2(Z$`hsCRP (ng/mL)`), center = TRUE, scale = TRUE)
+Hb_var <- scale(log2(Z$HbA1c), center = TRUE, scale = TRUE)
+HDL_var <- scale(log2(Z$HDL), center = TRUE, scale = TRUE)
+Chol_var <- scale(log2(Z$`Total cholesterol`), center = TRUE, scale = TRUE)
+
+# Results from the 'base' regression predicting systolic from common risk factors only
+summary(lm(y_var ~ race_var + Age_var + WC_var + CRP_var + Hb_var + HDL_var + Chol_var))
+# Adjusted R-squared = 0.09542, p-value = 0.01237; intercept and age are the only variables with p<0.05
+
+# Create variables for a for loop to test the association of each variable individually
+lipid <- as.character()     # variable for each lipid name
+
+# Variables to store beta coefficient from each term 
+beta_y_int <- as.numeric()
+beta_AfAm <- as.numeric()
+beta_Age <- as.numeric()
+beta_WC <- as.numeric()
+beta_CRP <- as.numeric()
+beta_Hb <- as.numeric()
+beta_HDL <- as.numeric()
+beta_Chol <- as.numeric()
+beta_lipid <- as.numeric()
+
+# Variables to store p-value of each term in regression
+p_y_int <- as.numeric()
+p_AfAm <- as.numeric()
+p_Age <- as.numeric()
+p_WC <- as.numeric()
+p_CRP <- as.numeric()
+p_Hb <- as.numeric()
+p_HDL <- as.numeric()
+p_Chol <- as.numeric()
+p_lipid <- as.numeric()
+
+# Variable to store adjusted R-squared value of each regression
+adj_r_sq <- as.numeric()
+
+# iterate for loop starting at the first lipid variable (column 6) and ending on the last one ('ncol(Z)')
+for (i in 9:ncol(Z)) {
+  # For each iteration, create independent lipid variable that is log2 and scaled
+  x_var <- scale(log2(Z[,i]), center = TRUE, scale = TRUE)
+  
+  # Run regression
+  my_lm <- lm(y_var ~ race_var + Age_var + WC_var + CRP_var + Hb_var + HDL_var + Chol_var + x_var)
+  
+  # Store name of lipid tested 
+  lipid[i] <- names(Z)[i]
+  
+  # store beta-coefficients; always in the first column of 'summary'
+  # note: first number in bracket (row) should match position of term in regression above (intercept = 1)    
+  beta_y_int[i] <- summary(my_lm)$coefficients[1,1]
+  beta_AfAm[i] <- summary(my_lm)$coefficients[2,1]
+  beta_Age[i] <- summary(my_lm)$coefficients[3,1]
+  beta_WC[i] <- summary(my_lm)$coefficients[4,1]
+  beta_CRP[i] <- summary(my_lm)$coefficients[5,1]
+  beta_Hb[i] <- summary(my_lm)$coefficients[6,1]
+  beta_HDL[i] <- summary(my_lm)$coefficients[7,1]
+  beta_Chol[i] <- summary(my_lm)$coefficients[8,1]
+  beta_lipid[i] <- summary(my_lm)$coefficients[9,1]
+  
+  # store term p-values; always in the fourth column of 'summary'; same note as above     
+  p_y_int[i] <- summary(my_lm)$coefficients[1,4]
+  p_AfAm[i] <- summary(my_lm)$coefficients[2,4]
+  p_Age[i] <- summary(my_lm)$coefficients[3,4]
+  p_WC[i] <- summary(my_lm)$coefficients[4,4]
+  p_CRP[i] <- summary(my_lm)$coefficients[5,4]
+  p_Hb[i] <- summary(my_lm)$coefficients[6,4]
+  p_HDL[i] <- summary(my_lm)$coefficients[7,4]
+  p_Chol[i] <- summary(my_lm)$coefficients[8,4]
+  p_lipid[i] <- summary(my_lm)$coefficients[9,4]
+   
+  # store adjusted r-squared 
+  adj_r_sq[i] <- summary(my_lm)$adj.r.sq
+}
+
+# Bind all regression variables into one matrix
+final_data <- cbind(lipid, beta_y_int, beta_AfAm, beta_Age,
+                    beta_WC, beta_CRP, beta_Hb, beta_HDL, beta_Chol, beta_lipid, p_y_int, 
+                    p_AfAm, p_Age, p_WC, p_CRP, p_Hb, p_HDL, p_Chol, p_lipid,
+                    adj_r_sq)
+
+# Change matrix to type tibble and ensure all variables except lipid name are numeric
+final_data <- as_tibble(final_data)
+final_data <- final_data |> drop_na()
+final_data[,2:ncol(final_data)] <- sapply(final_data[,2:ncol(final_data)],
+                                          as.numeric) 
+```
+
+As stated above, the base model is significant but only Age and y-intercept are individually significant terms. This may be due collinearity between the other variables. Howver, since all current covariates are considered 'traditional' and established risk factors for CVD, we will retain them in the regressions (physiological relevance).
+
+```{r}
+# save regression info as new data frame for further manipulation
+reg_plot <- final_data
+
+# adjust lipid term p-values for multiple testing 
+reg_plot$p_lipid_fdr <- p.adjust(reg_plot$p_lipid, method = 'fdr')
+
+# Create binary term for significance (q<0.15 = Yes)
+reg_plot$sig_lipid <- ifelse(reg_plot$p_lipid_fdr < 0.15, "YES", "NO")
+
+# Create additional variable identifying if a regression adjusted r-squared > base and q<0.15
+reg_plot$useful <- ifelse(reg_plot$adj_r_sq > 0.09542 & reg_plot$p_lipid_fdr < 0.15,
+                          "YES", "NO")
+
+# Create variable that will be used to plot lipid names that meet above criteria
+reg_plot$delabel <- NA
+reg_plot$delabel <- ifelse(reg_plot$useful == "YES",
+                           reg_plot$lipid, NA)
+
+# Retain lipid labels that correspond to target acyl chains only
+toMatch <- c("20:4", "18:2", "22:4")  # specify target acyl chains (arachidonic acid related chains)
+
+# Non-target acyl chain labels will not be labeled
+reg_plot$delabel <- ifelse(grepl(paste(toMatch,collapse="|"), 
+                             reg_plot$delabel),reg_plot$delabel,NA)
+
+# Transform lipid term p-value for plotting
+reg_plot$p_lipid <- (-log10(reg_plot$p_lipid))
+
+# Create scatterplot of lipid term beta-coefficients on x-axis and significance on y-axis
+# All lipids where term q<0.15 and adjusted r-squared > base regression are shaded in orange
+# All arachidonic acid lipids are labeled [if meeting above criteria]
+# See previous sections for explanation of ggplot functions not defined here
+p0 <- reg_plot |> 
+  ggplot(aes(x=beta_lipid, y=p_lipid, col=useful)) +
+  geom_point(alpha = 0.5) +
+  scale_x_continuous(limits = c(-6.0, 6.5)) +
+  scale_y_continuous(limits = c(0, 5.0), expand = c(0.01,0)) +
+  scale_color_manual(values=c("#E18727FF", "grey70"),
+                     name = "Lipid term (FDR)",
+                     breaks = c("YES", "NO"),
+                     labels = c("q<0.15", "q>0.15")) +
+  geom_text_repel(aes(label=delabel),                   # Label lpoints with arachidonic-related chain
+                  color = "black",
+                  segment.color = "#000000B2",
+                  min.segment.length = 0, segment.size = 0.2,  # set segment size parameters
+                  fontface = "bold", box.padding = 0.5,        # text parameters
+                  size = 4.0, family = "Arial",                # maximum allowed label overlaps
+                  max.overlaps = Inf
+                  ) +
+  ggtitle("SHOW Regressions - Individual Lipids") +
+  ylab(expression(bold("-log"["10"]*"(p-value)"))) +
+  xlab(expression(bold("Beta-coefficient"))) +
+  theme_bw(base_size = 16, base_family = "Arial") +
+  theme(legend.position = "right",
+        text = element_text(face="bold"),
+        axis.text = element_text(colour = "black")
+        )
+# Note, SM and HexCer are NOT ARA species; those tags can be removed later
+p0
+
+CairoPDF(file = "output/SHOW_single_lipid_regressions.pdf",
+         height = 8, width = 10)
+  print(p0)
+dev.off()
+```
+
+# 5. 'Best' regression
+
+Using lipids identified in the MIDUS analysis as significant predictors of systolic blood pressure, a regression predicting systolic blood pressure in the SHOW data was done.
+
+```{r}
+# Subset out key variables including systolic BP, covariates and target lipids
+Z <- lipid_data |>
+  select(`Systolic BP`, Race, Age, HbA1c,
+         `Total cholesterol`, HDL, `hsCRP (ng/mL)`,
+         `FA 18:2`, `WC (cm)`, `PC 17:0_20:3`,
+         `PE 18:0_22:4`, `PE 18:0_22:4_2`,
+         `EtherPE 18:1e_22:4`, `SM d36:2`,
+         `PE 18:1_20:4`, `PE 16:0_18:2`,
+         `TG 16:0_18:1_18:2`, `SM d38:1`, 
+         `PI 18:0_18:2`)
+
+# Log2 transform + scale all variables except systolic BP and Race 
+Z[,3:ncol(Z)] <- scale(log2(Z[,3:ncol(Z)]),
+                       center = T,
+                       scale = T)
+
+# Run regression
+myModel <- lm(`Systolic BP`~., Z)
+summary(myModel) # adjusted R2 = 0.163; p = 0.00648
+
+# Use dependent variables to predict Systolic BP (formula set by the above model)
+mypred <- predict(myModel, Z)
+
+# Create dataframe with predicted values, actual values and Race corresponding to each observation
+final <- data.frame(mypred, Z$`Systolic BP`,
+                    Z$Race)
+
+# Rename columns
+colnames(final) <- c("Predicted", "Systolic", "Race")
+
+# Create scatterplot with actual BP on x-axis and predicted BP on y-axis. Points colored by Race.
+p0 <- final |>
+  ggscatter(x = "Systolic", y = "Predicted",
+            add = "reg.line",                 # add regression line
+            color = "Race",                   # create additional grouping variable to plot one line/group
+            palette = palette_sc
+            ) +
+  stat_cor(aes(color = Race), method = "spearman",   # Specify correlation type to report
+               label.x = min(final$Systolic),     
+               p.accuracy = 0.001, r.accuracy = 0.01,
+               na.rm = T) +
+  xlab("Actual") +
+  ylab("Predicted") +
+  ggtitle("SHOW Best Model - Systolic BP (mmHg)") +
+  theme_bw() +
+  theme(legend.position = "right",
+        text = element_text(size = 16, family = "Arial"),
+        axis.line = element_line(colour = "black"))
+
+p0
+
+# Calculate mean average error (MAE) 
+final <- final[is.na(final$Predicted) == F,]
+final$error = abs(final$Systolic- final$Predicted)
+mean(final$error) # MAE = 13.401
+
+CairoPDF(file = "output/SHOW_bestModel.pdf", height = 10, width = 8)
+  print(p0)
+dev.off()
+```
+
+# 6. System info
+
+```{r}
+sessionInfo()
+```
+
+R version 4.2.2 (2022-10-31) Platform: x86_64-apple-darwin17.0 (64-bit) Running under: macOS Monterey 12.6.2
+
+Matrix products: default LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+
+locale: \[1\] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages: \[1\] stats graphics grDevices utils datasets methods base
+
+other attached packages: \[1\] webr_0.1.5 ggrepel_0.9.2 RColorBrewer_1.1-3 Cairo_1.6-0 scales_1.2.1\
+\[6\] ggsci_2.9 rstatix_0.7.1 ggpubr_0.5.0 forcats_0.5.2 stringr_1.5.0\
+\[11\] dplyr_1.0.10 purrr_0.3.5 readr_2.1.3 tidyr_1.2.1 tibble_3.1.8\
+\[16\] ggplot2_3.4.0 tidyverse_1.3.2
+
+loaded via a namespace (and not attached): \[1\] rrtable_0.3.0 googledrive_2.0.0 colorspace_2.0-3 ggsignif_0.6.4\
+\[5\] rio_0.5.29 ellipsis_0.3.2 sjlabelled_1.2.0 flextable_0.8.3\
+\[9\] base64enc_0.1-3 fs_1.5.2 rstudioapi_0.14 farver_2.1.1\
+\[13\] bit64_4.0.5 DT_0.26 fansi_1.0.3 lubridate_1.9.0\
+\[17\] xml2_1.3.3 splines_4.2.2 mnormt_2.1.1 cachem_1.0.6\
+\[21\] knitr_1.41 sjmisc_2.8.9 polyclip_1.10-4 jsonlite_1.8.4\
+\[25\] broom_1.0.2 dbplyr_2.2.1 ggforce_0.4.1 shiny_1.7.4\
+\[29\] compiler_4.2.2 httr_1.4.4 backports_1.4.1 Matrix_1.5-3\
+\[33\] assertthat_0.2.1 fastmap_1.1.0 gargle_1.2.1 cli_3.4.1\
+\[37\] later_1.3.0 tweenr_2.0.2 moonBook_0.3.1 htmltools_0.5.4\
+\[41\] tools_4.2.2 gtable_0.3.1 glue_1.6.2 reshape2_1.4.4\
+\[45\] Rcpp_1.0.9 carData_3.0-5 jquerylib_0.1.4 cellranger_1.1.0\
+\[49\] vctrs_0.5.1 nlme_3.1-161 lmtest_0.9-40 psych_2.2.9\
+\[53\] insight_0.18.8 xfun_0.35.3 openxlsx_4.2.5.1 rvest_1.0.3\
+\[57\] timechange_0.1.1 mime_0.12 miniUI_0.1.1.1 lifecycle_1.0.3\
+\[61\] devEMF_4.1-1 googlesheets4_1.0.1 zoo_1.8-11 MASS_7.3-58.1\
+\[65\] vroom_1.6.0 hms_1.1.2 promises_1.2.0.1 parallel_4.2.2\
+\[69\] curl_4.3.3 sass_0.4.4 gdtools_0.2.4 stringi_1.7.8\
+\[73\] zip_2.2.2 rlang_1.0.6 pkgconfig_2.0.3 systemfonts_1.0.4\
+\[77\] evaluate_0.19 lattice_0.20-45 labeling_0.4.2 rvg_0.3.0\
+\[81\] htmlwidgets_1.6.0 bit_4.0.5 tidyselect_1.2.0 editData_0.1.8\
+\[85\] plyr_1.8.8 magrittr_2.0.3 R6_2.5.1 generics_0.1.3\
+\[89\] DBI_1.1.3 mgcv_1.8-41 foreign_0.8-84 pillar_1.8.1\
+\[93\] haven_2.5.1 withr_2.5.0 abind_1.4-5 ztable_0.2.3\
+\[97\] modelr_0.1.10 crayon_1.5.2 car_3.1-1 shinyWidgets_0.7.5 \[101\] uuid_1.1-0 utf8_1.2.2 tzdb_0.3.0 rmarkdown_2.19\
+\[105\] officer_0.5.0 grid_4.2.2 readxl_1.4.1 data.table_1.14.6\
+\[109\] vcd_1.4-10 reprex_2.0.2 digest_0.6.31 xtable_1.8-4\
+\[113\] httpuv_1.6.7 munsell_0.5.0 bslib_0.4.2
