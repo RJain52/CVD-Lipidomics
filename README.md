@@ -8,7 +8,12 @@ Raghav Jain, Jessica Davidson, Paula Gonzalez, Christopher L Coe, Camille King, 
 
  https://doi.org/10.1101/2022.08.24.22279186
 
-Repository Under Construction
+
+*UPDATE 12/28/2022*
+
+-Code related to analysis of <a href="midus.wisc.edu">MIDUS</a> data is now available in a Quarto document. Data associated with the analysis are randomly generated data and NOT the data reported in our manuscript. MIDUS policy does not allow any publishing of raw data sets. Requests for original data should be sent to the MIDUS study. 
+
+-Oxylipid data generated in the study by the Simcox Lab has been deposited to the MIDUS data repository. 
 
 *UPDATE 12/24/2022*
 
